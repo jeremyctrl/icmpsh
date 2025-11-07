@@ -94,13 +94,14 @@ fn process_packet(
             let data = &payload[SIGNATURE.len()..];
             if let Ok(msg) = String::from_utf8(data.to_vec()) {
                 rec.add_message(&msg);
+                rec.queued.clear();
                 rec.blocked = false;
             }
         }
 
         let mut data = SIGNATURE.to_vec();
         data.extend_from_slice(rec.queued.as_bytes());
-        
+
         let mut buf = vec![0u8; 8 + data.len()];
         let mut reply = echo_reply::MutableEchoReplyPacket::new(&mut buf).unwrap();
 
