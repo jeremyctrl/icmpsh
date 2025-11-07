@@ -1,70 +1,76 @@
 #include <winsock2.h>
+#include <windows.h>
+#include <ws2tcpip.h>
 #include <iphlpapi.h>
 #include <icmpapi.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#pragma comment(lib, "iphlpapi.lib")
-#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "Iphlpapi.lib")
+#pragma comment(lib, "Ws2_32.lib")
 
-int __cdecl main(int argc, char **argv)  {
-    HANDLE hIcmpFile;
-    unsigned long ipaddr = INADDR_NONE;
-    DWORD dwRetVal = 0;
-    char SendData[32] = "Data Buffer";
-    LPVOID ReplyBuffer = NULL;
-    DWORD ReplySize = 0;
-    
+int main(int argc, char **argv) {
     if (argc != 2) {
-        printf("usage: %s IP address\n", argv[0]);
+        fprintf(stderr, "Usage: %s <ip-address>\n", argv[0]);
         return 1;
     }
 
-    ipaddr = inet_addr(argv[1]);
+    const char *ip_str = argv[1];
+    IPAddr ipaddr = inet_addr(ip_str);
     if (ipaddr == INADDR_NONE) {
-        printf("usage: %s IP address\n", argv[0]);
+        fprintf(stderr, "Invalid IP address: %s\n", ip_str);
         return 1;
     }
-    
-    hIcmpFile = IcmpCreateFile();
-    if (hIcmpFile == INVALID_HANDLE_VALUE) {
-        printf("\tUnable to open handle.\n");
-        printf("IcmpCreatefile returned error: %ld\n", GetLastError() );
-        return 1;
-    }    
 
-    ReplySize = sizeof(ICMP_ECHO_REPLY) + sizeof(SendData);
-    ReplyBuffer = (VOID*) malloc(ReplySize);
-    if (ReplyBuffer == NULL) {
-        printf("\tUnable to allocate memory\n");
-        return 1;
-    }    
-    
-    
-    dwRetVal = IcmpSendEcho(hIcmpFile, ipaddr, SendData, sizeof(SendData), 
-        NULL, ReplyBuffer, ReplySize, 1000);
-    if (dwRetVal != 0) {
-        PICMP_ECHO_REPLY pEchoReply = (PICMP_ECHO_REPLY)ReplyBuffer;
-        struct in_addr ReplyAddr;
-        ReplyAddr.S_un.S_addr = pEchoReply->Address;
-        printf("\tSent icmp message to %s\n", argv[1]);
-        if (dwRetVal > 1) {
-            printf("\tReceived %ld icmp message responses\n", dwRetVal);
-            printf("\tInformation from the first response:\n"); 
-        }    
-        else {    
-            printf("\tReceived %ld icmp message response\n", dwRetVal);
-            printf("\tInformation from this response:\n"); 
-        }    
-        printf("\t  Received from %s\n", inet_ntoa( ReplyAddr ) );
-        printf("\t  Status = %ld\n", 
-            pEchoReply->Status);
-        printf("\t  Roundtrip time = %ld milliseconds\n", 
-            pEchoReply->RoundTripTime);
-    }
-    else {
-        printf("\tCall to IcmpSendEcho failed.\n");
-        printf("\tIcmpSendEcho returned error: %ld\n", GetLastError() );
+    HANDLE hIcmpFile = IcmpCreateFile();
+    if (hIcmpFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "IcmpCreateFile failed: %lu\n", GetLastError());
         return 1;
     }
+
+    unsigned char sendData[24] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0,
+        'i', 'c', 'm', 'p', 's', 'h',
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    DWORD replySize = sizeof(ICMP_ECHO_REPLY) + sizeof(sendData) + 8;
+    void *replyBuffer = malloc(replySize);
+    if (!replyBuffer) {
+        fprintf(stderr, "Memory allocation failed.\n");
+        IcmpCloseHandle(hIcmpFile);
+        return 1;
+    }
+
+    while (1) {
+        DWORD ret = IcmpSendEcho(
+            hIcmpFile,
+            ipaddr,
+            (LPVOID)sendData,
+            (WORD)sizeof(sendData),
+            NULL,
+            replyBuffer,
+            replySize,
+            1000
+        );
+
+        if (ret != 0) {
+            PICMP_ECHO_REPLY echo = (PICMP_ECHO_REPLY)replyBuffer;
+            struct in_addr addr;
+            addr.s_addr = echo->Address;
+            printf("Reply from %s: time=%lums, status=%lu\n",
+                   inet_ntoa(addr),
+                   echo->RoundTripTime,
+                   echo->Status);
+        } else {
+            DWORD err = GetLastError();
+            printf("Request timed out (error %lu)\n", err);
+        }
+
+        Sleep(3000);
+    }
+
+    free(replyBuffer);
+    IcmpCloseHandle(hIcmpFile);
     return 0;
 }
