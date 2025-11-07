@@ -1,9 +1,11 @@
 use std::io::stdout;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use ratatui::Terminal;
-use ratatui::crossterm::execute;
-use ratatui::crossterm::terminal::EnterAlternateScreen;
+use ratatui::crossterm::event::{Event, KeyCode};
+use ratatui::crossterm::{event, execute};
+use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::text::{Line, Span};
@@ -35,6 +37,7 @@ pub struct App {
     pub recipients: Arc<Mutex<Vec<Recipient>>>,
     selected: usize,
     input: String,
+    last_tick: Instant,
 }
 
 impl App {
@@ -43,6 +46,7 @@ impl App {
             recipients: Arc::new(Mutex::new(Vec::new())),
             selected: 0,
             input: String::new(),
+            last_tick: Instant::now(),
         }
     }
 
@@ -51,15 +55,41 @@ impl App {
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
+        enable_raw_mode()?;
+        
         let mut stdout = stdout();
         execute!(stdout, EnterAlternateScreen)?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
+        let tick_rate = Duration::from_millis(100);
+
         loop {
             terminal.draw(|f| self.draw(f))?;
+
+            let timeout = tick_rate
+                .checked_sub(self.last_tick.elapsed())
+                .unwrap_or(Duration::from_secs(0));
+
+            if event::poll(timeout)? {
+                if let Event::Key(key) = event::read()? {
+                    match key.code {
+                        KeyCode::Esc => break,
+                        _ => {},
+                    }
+                }
+            }
+
+            if self.last_tick.elapsed() >= tick_rate {
+                self.last_tick = Instant::now();
+            }
         }
+
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        terminal.show_cursor()?;
+        Ok(())
     }
 
     fn draw(&mut self, f: &mut ratatui::Frame) {
