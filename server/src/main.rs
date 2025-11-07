@@ -1,12 +1,21 @@
+use std::net::IpAddr;
+
 use pnet::{
     packet::{
         Packet,
-        icmp::{IcmpTypes, echo_reply, echo_request::EchoRequestPacket},
+        icmp::{IcmpPacket, IcmpTypes, echo_reply, echo_request::EchoRequestPacket},
         ip::IpNextHeaderProtocols,
         util,
     },
-    transport::{TransportChannelType, TransportProtocol, icmp_packet_iter, transport_channel},
+    transport::{
+        TransportChannelType, TransportProtocol, TransportSender, icmp_packet_iter,
+        transport_channel,
+    },
 };
+
+const SIGNATURE: [u8; 24] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, b'i', b'c', b'm', b'p', b's', b'h', 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
 
 fn main() -> anyhow::Result<()> {
     let (mut tx, mut rx) = transport_channel(
@@ -21,8 +30,16 @@ fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        if let Some(echo) = EchoRequestPacket::new(packet.packet()) {
-            let mut buf = vec![0u8; packet.packet().len()];
+        process_packet(addr, packet, &mut tx)?;
+    }
+
+    Ok(())
+}
+
+fn process_packet(addr: IpAddr, icmp: IcmpPacket, tx: &mut TransportSender) -> anyhow::Result<()> {
+    if let Some(echo) = EchoRequestPacket::new(icmp.packet()) {
+        if !echo.payload().starts_with(&SIGNATURE) {
+            let mut buf = vec![0u8; icmp.packet().len()];
             let mut reply = echo_reply::MutableEchoReplyPacket::new(&mut buf).unwrap();
 
             reply.set_identifier(echo.get_identifier());
@@ -33,7 +50,11 @@ fn main() -> anyhow::Result<()> {
             reply.set_checksum(checksum);
 
             tx.send_to(reply, addr)?;
+
+            return Ok(());
         }
+
+        println!("connection from {:?}", addr);
     }
 
     Ok(())
