@@ -52,10 +52,6 @@ impl App {
         }
     }
 
-    pub fn add_recipient(&self, r: Recipient) {
-        self.recipients.lock().unwrap().push(r);
-    }
-
     pub fn run(&self) -> anyhow::Result<()> {
         enable_raw_mode()?;
 
@@ -114,7 +110,8 @@ impl App {
         f.render_widget(block, size);
 
         if recipients.is_empty() {
-            let msg = Paragraph::new("(...waiting for connections...)").alignment(Alignment::Center);
+            let msg =
+                Paragraph::new("(...waiting for connections...)").alignment(Alignment::Center);
             f.render_widget(msg, size);
             return;
         }

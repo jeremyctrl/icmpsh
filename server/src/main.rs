@@ -59,13 +59,15 @@ fn process_packet(
     recipients: &Arc<Mutex<Vec<Recipient>>>,
 ) -> anyhow::Result<()> {
     if let Some(echo) = EchoRequestPacket::new(icmp.packet()) {
-        if !echo.payload().starts_with(&SIGNATURE) {
+        let payload = echo.payload();
+
+        if !payload.starts_with(&SIGNATURE) {
             let mut buf = vec![0u8; icmp.packet().len()];
             let mut reply = echo_reply::MutableEchoReplyPacket::new(&mut buf).unwrap();
 
             reply.set_identifier(echo.get_identifier());
             reply.set_sequence_number(echo.get_sequence_number());
-            reply.set_payload(echo.payload());
+            reply.set_payload(payload);
 
             let checksum = util::checksum(reply.packet(), 1);
             reply.set_checksum(checksum);
@@ -77,9 +79,37 @@ fn process_packet(
 
         let label = addr.to_string();
         let mut recipients = recipients.lock().unwrap();
-        if !recipients.iter().any(|r| r.label == label) {
-            recipients.push(Recipient::new(&label));
+
+        let idx = recipients.iter().position(|r| r.label == label);
+        let idx = match idx {
+            Some(i) => i,
+            None => {
+                recipients.push(Recipient::new(&label));
+                recipients.len() - 1
+            }
+        };
+        let rec = &mut recipients[idx];
+
+        if payload.len() != SIGNATURE.len() {
+            let data = &payload[SIGNATURE.len()..];
+            if let Ok(msg) = String::from_utf8(data.to_vec()) {
+                rec.add_message(&msg);
+                rec.blocked = false;
+            }
         }
+
+        let data = rec.queued.clone().into_bytes();
+        let mut buf = vec![0u8; 8 + data.len()];
+        let mut reply = echo_reply::MutableEchoReplyPacket::new(&mut buf).unwrap();
+
+        reply.set_identifier(echo.get_identifier());
+        reply.set_sequence_number(echo.get_sequence_number());
+        reply.set_payload(&data);
+
+        let checksum = util::checksum(reply.packet(), 1);
+        reply.set_checksum(checksum);
+
+        tx.lock().unwrap().send_to(reply, addr)?;
     }
 
     Ok(())
