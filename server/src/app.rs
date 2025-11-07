@@ -80,6 +80,7 @@ impl App {
                         KeyCode::Backspace => {
                             self.input.pop();
                         }
+                        KeyCode::Enter => self.submit_message(),
                         _ => {},
                     }
                 }
@@ -168,6 +169,18 @@ impl App {
             if !r.blocked {
                 drop(recipients);
                 self.input.push(c);
+            }
+        }
+    }
+
+    fn submit_message(&mut self) {
+        let mut recipients = self.recipients.lock().unwrap();
+        if let Some(r) = recipients.get_mut(self.selected) {
+            if !r.blocked && !self.input.is_empty() {
+                r.queued = self.input.clone();
+                r.history.push(format!("> {}", self.input));
+                r.blocked = true;
+                self.input.clear();
             }
         }
     }
