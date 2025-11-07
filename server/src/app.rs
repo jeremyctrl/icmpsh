@@ -4,8 +4,10 @@ use std::time::{Duration, Instant};
 
 use ratatui::Terminal;
 use ratatui::crossterm::event::{Event, KeyCode};
+use ratatui::crossterm::terminal::{
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 use ratatui::crossterm::{event, execute};
-use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::text::{Line, Span};
@@ -56,7 +58,7 @@ impl App {
 
     pub fn run(&mut self) -> anyhow::Result<()> {
         enable_raw_mode()?;
-        
+
         let mut stdout = stdout();
         execute!(stdout, EnterAlternateScreen)?;
 
@@ -81,7 +83,9 @@ impl App {
                             self.input.pop();
                         }
                         KeyCode::Enter => self.submit_message(),
-                        _ => {},
+                        KeyCode::Up => self.navigate_up(),
+                        KeyCode::Down => self.navigate_down(),
+                        _ => {}
                     }
                 }
             }
@@ -182,6 +186,20 @@ impl App {
                 r.blocked = true;
                 self.input.clear();
             }
+        }
+    }
+
+    fn navigate_up(&mut self) {
+        let recipients = self.recipients.lock().unwrap();
+        if !recipients.is_empty() {
+            self.selected = self.selected.saturating_sub(1);
+        }
+    }
+
+    fn navigate_down(&mut self) {
+        let recipients = self.recipients.lock().unwrap();
+        if self.selected + 1 < recipients.len() {
+            self.selected += 1;
         }
     }
 }
