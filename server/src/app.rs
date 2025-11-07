@@ -11,7 +11,7 @@ use ratatui::crossterm::{event, execute};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::CrosstermBackend;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 
 pub struct Recipient {
     pub label: String,
@@ -150,11 +150,13 @@ impl App {
                 .map(|m| Line::from(Span::raw(m.clone())))
                 .collect();
 
-            let chat_box = Paragraph::new(chat_text).block(
-                Block::default()
-                    .title(rec.label.clone())
-                    .borders(Borders::ALL),
-            );
+            let chat_box = Paragraph::new(chat_text)
+                .block(
+                    Block::default()
+                        .title(rec.label.clone())
+                        .borders(Borders::ALL),
+                )
+                .wrap(Wrap { trim: false });
             f.render_widget(chat_box, chat_chunks[0]);
 
             let placeholder = if rec.blocked {
