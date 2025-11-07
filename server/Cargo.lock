@@ -557,6 +557,7 @@ dependencies = [
  "anyhow",
  "pnet",
  "ratatui",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
