@@ -98,7 +98,9 @@ fn process_packet(
             }
         }
 
-        let data = rec.queued.clone().into_bytes();
+        let mut data = SIGNATURE.to_vec();
+        data.extend_from_slice(rec.queued.as_bytes());
+        
         let mut buf = vec![0u8; 8 + data.len()];
         let mut reply = echo_reply::MutableEchoReplyPacket::new(&mut buf).unwrap();
 
