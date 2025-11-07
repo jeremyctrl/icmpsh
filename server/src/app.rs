@@ -76,6 +76,10 @@ impl App {
                 if let Event::Key(key) = event::read()? {
                     match key.code {
                         KeyCode::Esc => break,
+                        KeyCode::Char(c) => self.handle_char(c),
+                        KeyCode::Backspace => {
+                            self.input.pop();
+                        }
                         _ => {},
                     }
                 }
@@ -155,6 +159,16 @@ impl App {
             let input_box = Paragraph::new(placeholder)
                 .block(Block::default().borders(Borders::ALL).title("Input"));
             f.render_widget(input_box, chat_chunks[1]);
+        }
+    }
+
+    fn handle_char(&mut self, c: char) {
+        let recipients = self.recipients.lock().unwrap();
+        if let Some(r) = recipients.get(self.selected) {
+            if !r.blocked {
+                drop(recipients);
+                self.input.push(c);
+            }
         }
     }
 }
