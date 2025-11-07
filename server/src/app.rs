@@ -6,6 +6,7 @@ use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::EnterAlternateScreen;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::CrosstermBackend;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
 pub struct Recipient {
@@ -95,5 +96,35 @@ impl App {
         let recipient_list =
             List::new(list_items).block(Block::default().title("Recipients").borders(Borders::ALL));
         f.render_widget(recipient_list, chunks[0]);
+
+        let chat_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(3)])
+            .split(chunks[1]);
+
+        if let Some(rec) = recipients.get(self.selected) {
+            let chat_text: Vec<Line> = rec
+                .history
+                .iter()
+                .map(|m| Line::from(Span::raw(m.clone())))
+                .collect();
+
+            let chat_box = Paragraph::new(chat_text).block(
+                Block::default()
+                    .title(rec.label.clone())
+                    .borders(Borders::ALL),
+            );
+            f.render_widget(chat_box, chat_chunks[0]);
+
+            let placeholder = if rec.blocked {
+                "waiting for response...".to_string()
+            } else {
+                self.input.clone()
+            };
+
+            let input_box = Paragraph::new(placeholder)
+                .block(Block::default().borders(Borders::ALL).title("Input"));
+            f.render_widget(input_box, chat_chunks[1]);
+        }
     }
 }
