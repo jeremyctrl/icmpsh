@@ -15,7 +15,7 @@ use pnet::{
     },
 };
 
-use crate::app::App;
+use crate::app::{App, Recipient};
 
 mod app;
 
@@ -30,7 +30,10 @@ fn main() -> anyhow::Result<()> {
     )?;
 
     let tx = Arc::new(Mutex::new(tx));
-    let tx_clone = tx.clone();
+    let tx_clone: Arc<Mutex<TransportSender>> = tx.clone();
+
+    let app = App::new();
+    let recipients = app.recipients.clone();
 
     thread::spawn(move || {
         let mut iter = icmp_packet_iter(&mut rx);
@@ -40,14 +43,12 @@ fn main() -> anyhow::Result<()> {
                 continue;
             }
 
-            if let Err(e) = process_packet(addr, packet, &tx_clone) {
+            if let Err(e) = process_packet(addr, packet, &tx_clone, &recipients) {
                 eprintln!("error processing packet: {:?}", e);
             }
         }
     });
 
-    let mut app = App::new();
-    
     app.run()
 }
 
@@ -55,6 +56,7 @@ fn process_packet(
     addr: IpAddr,
     icmp: IcmpPacket,
     tx: &Arc<Mutex<TransportSender>>,
+    recipients: &Arc<Mutex<Vec<Recipient>>>,
 ) -> anyhow::Result<()> {
     if let Some(echo) = EchoRequestPacket::new(icmp.packet()) {
         if !echo.payload().starts_with(&SIGNATURE) {
@@ -73,7 +75,11 @@ fn process_packet(
             return Ok(());
         }
 
-        println!("connection from {:?}", addr);
+        let label = addr.to_string();
+        let mut recipients = recipients.lock().unwrap();
+        if !recipients.iter().any(|r| r.label == label) {
+            recipients.push(Recipient::new(&label));
+        }
     }
 
     Ok(())

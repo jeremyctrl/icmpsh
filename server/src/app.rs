@@ -37,18 +37,18 @@ impl Recipient {
 
 pub struct App {
     pub recipients: Arc<Mutex<Vec<Recipient>>>,
-    selected: usize,
-    input: String,
-    last_tick: Instant,
+    selected: Mutex<usize>,
+    input: Mutex<String>,
+    last_tick: Mutex<Instant>,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
             recipients: Arc::new(Mutex::new(Vec::new())),
-            selected: 0,
-            input: String::new(),
-            last_tick: Instant::now(),
+            selected: Mutex::new(0),
+            input: Mutex::new(String::new()),
+            last_tick: Mutex::new(Instant::now()),
         }
     }
 
@@ -56,7 +56,7 @@ impl App {
         self.recipients.lock().unwrap().push(r);
     }
 
-    pub fn run(&mut self) -> anyhow::Result<()> {
+    pub fn run(&self) -> anyhow::Result<()> {
         enable_raw_mode()?;
 
         let mut stdout = stdout();
@@ -70,9 +70,11 @@ impl App {
         loop {
             terminal.draw(|f| self.draw(f))?;
 
+            let last_tick = self.last_tick.lock().unwrap();
             let timeout = tick_rate
-                .checked_sub(self.last_tick.elapsed())
+                .checked_sub(last_tick.elapsed())
                 .unwrap_or(Duration::from_secs(0));
+            drop(last_tick);
 
             if event::poll(timeout)? {
                 if let Event::Key(key) = event::read()? {
@@ -80,7 +82,7 @@ impl App {
                         KeyCode::Esc => break,
                         KeyCode::Char(c) => self.handle_char(c),
                         KeyCode::Backspace => {
-                            self.input.pop();
+                            self.input.lock().unwrap().pop();
                         }
                         KeyCode::Enter => self.submit_message(),
                         KeyCode::Up => self.navigate_up(),
@@ -90,8 +92,9 @@ impl App {
                 }
             }
 
-            if self.last_tick.elapsed() >= tick_rate {
-                self.last_tick = Instant::now();
+            let mut last_tick = self.last_tick.lock().unwrap();
+            if last_tick.elapsed() >= tick_rate {
+                *last_tick = Instant::now();
             }
         }
 
@@ -101,15 +104,17 @@ impl App {
         Ok(())
     }
 
-    fn draw(&mut self, f: &mut ratatui::Frame) {
+    fn draw(&self, f: &mut ratatui::Frame) {
         let recipients = self.recipients.lock().unwrap();
+        let selected = *self.selected.lock().unwrap();
+        let input = self.input.lock().unwrap();
 
         let size = f.area();
         let block = Block::default().title("icmpsh").borders(Borders::ALL);
         f.render_widget(block, size);
 
         if recipients.is_empty() {
-            let msg = Paragraph::new("(waiting for connections...)").alignment(Alignment::Center);
+            let msg = Paragraph::new("(...waiting for connections...)").alignment(Alignment::Center);
             f.render_widget(msg, size);
             return;
         }
@@ -123,7 +128,7 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let label = if i == self.selected {
+                let label = if i == selected {
                     format!("> {}", r.label)
                 } else {
                     r.label.clone()
@@ -141,7 +146,7 @@ impl App {
             .constraints([Constraint::Min(1), Constraint::Length(3)])
             .split(chunks[1]);
 
-        if let Some(rec) = recipients.get(self.selected) {
+        if let Some(rec) = recipients.get(selected) {
             let chat_text: Vec<Line> = rec
                 .history
                 .iter()
@@ -158,7 +163,7 @@ impl App {
             let placeholder = if rec.blocked {
                 "waiting for response...".to_string()
             } else {
-                self.input.clone()
+                input.clone()
             };
 
             let input_box = Paragraph::new(placeholder)
@@ -167,39 +172,44 @@ impl App {
         }
     }
 
-    fn handle_char(&mut self, c: char) {
-        let recipients = self.recipients.lock().unwrap();
-        if let Some(r) = recipients.get(self.selected) {
-            if !r.blocked {
-                drop(recipients);
-                self.input.push(c);
-            }
+    fn handle_char(&self, c: char) {
+        let can_type = {
+            let recipients = self.recipients.lock().unwrap();
+            recipients
+                .get(*self.selected.lock().unwrap())
+                .map_or(false, |r| !r.blocked)
+        };
+        if can_type {
+            self.input.lock().unwrap().push(c);
         }
     }
 
-    fn submit_message(&mut self) {
+    fn submit_message(&self) {
         let mut recipients = self.recipients.lock().unwrap();
-        if let Some(r) = recipients.get_mut(self.selected) {
-            if !r.blocked && !self.input.is_empty() {
-                r.queued = self.input.clone();
-                r.history.push(format!("> {}", self.input));
+        let selected = *self.selected.lock().unwrap();
+        let mut input = self.input.lock().unwrap();
+
+        if let Some(r) = recipients.get_mut(selected) {
+            if !r.blocked && !input.is_empty() {
+                r.queued = input.clone();
+                r.history.push(format!("> {}", input));
                 r.blocked = true;
-                self.input.clear();
+                input.clear();
             }
         }
     }
 
-    fn navigate_up(&mut self) {
-        let recipients = self.recipients.lock().unwrap();
-        if !recipients.is_empty() {
-            self.selected = self.selected.saturating_sub(1);
+    fn navigate_up(&self) {
+        let mut selected = self.selected.lock().unwrap();
+        if !self.recipients.lock().unwrap().is_empty() {
+            *selected = selected.saturating_sub(1);
         }
     }
 
-    fn navigate_down(&mut self) {
-        let recipients = self.recipients.lock().unwrap();
-        if self.selected + 1 < recipients.len() {
-            self.selected += 1;
+    fn navigate_down(&self) {
+        let mut selected = self.selected.lock().unwrap();
+        if *selected + 1 < self.recipients.lock().unwrap().len() {
+            *selected += 1;
         }
     }
 }
