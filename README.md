@@ -34,6 +34,8 @@ make client
 make server
 ```
 
+You will need [Cargo](https://doc.rust-lang.org/stable/cargo/) and [Clang](https://clang.llvm.org/).
+
 ### Usage
 
 Start the server on a machine that can receive ICMP traffic:
